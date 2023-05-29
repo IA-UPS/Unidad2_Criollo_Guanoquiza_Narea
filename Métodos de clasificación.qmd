@@ -1,0 +1,353 @@
+---
+title: "Tarea"
+author: "Katherine Criollo, Christian Guanoquiza, Esteban Narea"
+format: pdf
+editor: visual
+---
+
+# Métodos de clasificación
+
+Veremos un resumen de todos los métodos que hemos visto incluyendo Knn y Naive Bayes. Tened en cuenta que es un método de clasificación multiclase con más de 2 niveles.
+
+## Cargamos librerías
+
+```{r}
+#Principal
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(glmnet) ## regresiones logisitcas
+library(caret) ### bayes y knn
+library(e1071) ## bayes
+
+```
+
+## Cargamos datos
+
+```{r}
+#Principal
+# quitamos la primera columna
+datos <- read.table("./yeast.data",header = F)[,-1]
+
+```
+
+Creamos las funciones que vamos a necesitar, es decir las funciones de transformación
+
+```{r}
+#Principal
+min.max.mean <- function(X) apply(X,2,function(x) (x-mean(x))/(max(x)-min(x)))
+min.max.median <- function(X) apply(X,2,function(x) (x-median(x))/(max(x)-min(x)))
+min.max <- function(X) apply(X,2,function(x) (x-min(x))/(max(x)-min(x)))
+zscore <- function(X) apply(X,2,function(x) (x-mean(x))/sd(x))
+l2 <- function(X) apply(X,2,function(x) x/sqrt(sum(x^2))) 
+
+
+
+```
+
+Para hacer las transformaciones, solamente necesitamos las variables numéricas.
+
+```{r}
+#Principal
+datos <- as.data.frame(datos)
+datos.numericos <- datos[, which(unlist(lapply(datos, is.numeric)))]
+clase <- datos$V10 <- as.factor(datos$V10)
+colnames(datos.numericos) <- paste0("Var", rep(1:8))
+### procedemos a crear una lista con todas las transformaciones
+
+datos.lista <- list(
+  raw = bind_cols(datos.numericos,clase=clase),
+  zscore = bind_cols(zscore(datos.numericos),
+                     clase = clase),
+  l2 = bind_cols(l2(datos.numericos), clase = clase),
+  media = bind_cols(min.max.mean(datos.numericos), clase =
+                      clase),
+  mediana = bind_cols(min.max.median(datos.numericos), clase =
+                        clase),
+  min_max = bind_cols(min.max(datos.numericos),
+  clase = clase))
+
+```
+
+## Descriptiva Gráfica
+
+Al ser demasiadas variables, podemos realizar un `melt`
+
+```{r}
+lista_graficos <- vector("list",length=length(datos.lista))
+datos.melt <- lapply(datos.lista,reshape2::melt)
+
+```
+
+Podemos ver la cabecera de alguna transfomacion para ver el nombre nuevo de las variables
+
+```{r}
+head(datos.melt$zscore)
+```
+
+```{r}
+for(l in 1:length(datos.melt)){
+  
+  X <- datos.melt[[l]]
+  nombre <- names(datos.melt)[l]
+  lista_graficos[[l]] <- ggplot(X,aes(y=value,fill=clase))+geom_boxplot()+ggtitle(nombre)+xlab("")+ylab("")
+  
+  
+}
+
+names(lista_graficos) <- paste0("plot",1:length(datos.lista))
+
+lista_graficos$plot1
+lista_graficos$plot2
+lista_graficos$plot3
+lista_graficos$plot4
+lista_graficos$plot5
+lista_graficos$plot6
+
+
+```
+
+Así por ejemplo la normalización min-max es la mejor, puesto que no tenemos outliers
+
+Otra forma de ver la transfomración es mediante gráficos de densidad
+
+```{r}
+
+```
+
+```{r}
+for(l in 1:length(datos.melt)){
+  
+  X <- datos.melt[[l]]
+  nombre <- names(datos.melt)[l]
+  lista_graficos[[l]] <- ggplot(X,aes(x=value))+geom_density()+ggtitle(nombre)+xlab("")+ylab("")
+  
+  
+}
+
+names(lista_graficos) <- paste0("plot",1:length(datos.lista))
+
+lista_graficos$plot1
+lista_graficos$plot2
+lista_graficos$plot3
+lista_graficos$plot4
+lista_graficos$plot5
+lista_graficos$plot6
+```
+
+Sin embargo, al ver la densidad, no tenemos una transformacion uniforme.
+
+```{r}
+corrplot::corrplot(cor(datos.numericos))
+```
+
+```{r}
+corrplot::corrplot(cor(datos.lista$media[,-ncol(datos)]))
+```
+
+### Partición de datos
+
+NOTA: PODEMOS CREAR LA PARTICIÓN CON `caret` o a mano, el 70 porciento de los datos. A mano sería
+
+```{r}
+#Principal
+set.seed(2796)
+n  <- nrow(datos)
+idx <- sample(1:n,n*0.7)
+### para conjunto de datos podemos realizar el split
+datos.train.lista <- lapply(datos.lista, function(x) x[idx,])
+datos.test.lista <- lapply(datos.lista, function(x) x[-idx,])
+
+```
+
+### Ejemplo regresión logística
+
+alpha=1 es lasso y 0 es ridge
+
+```{r warning=FALSE}
+#Regresion logistica simple
+
+#Establecemos una semilla para la generación de números aleatorios, se define el esquema de validación cruzada y creamos una función para entrenar un modelo de regresión logística simple.
+set.seed(27965)
+trControl <- trainControl(method = 'cv',
+                          number = 10)
+myfnlog <- function(x) train(clase ~ ., data = x, method = "multinom", trControl = trControl, trace = F)
+
+# Se aplica una función a cada elemento de una lista y se almacenan los resultados en otra lista. Se crea un vector de lista vacío para almacenar las predicciones.
+
+logistica.lista <- lapply(datos.train.lista,myfnlog)
+logisita.pred <- vector("list",length = length(datos.lista))
+
+# Predicciones utilizando el modelo almacenado en cada elemento de logistica.lista
+# logisita.pred poseera las prediccionesde a cada modelo en logistica.lista para los datos de prueba en datos.test.lista.
+
+for(l in 1:length(datos.lista)){
+  
+  logisita.pred[[l]] <- predict(logistica.lista[[l]],datos.test.lista[[l]])
+  
+}
+
+# Asignación nombres a los elementos y vector accuracy
+names(logisita.pred) <- names(datos.lista)
+accuracy <- vector("numeric",length = length(datos.lista))
+
+# Calculo de la precisión para los modelo en la lista logisita.pred, La precisión se almacenan en el vector accuracy
+for(l in 1:length(datos.lista)){
+  
+  accuracy[l] <- confusionMatrix(datos.test.lista$raw$clase,logisita.pred[[l]])$overall[1]
+  
+}
+
+# Se asignan nombres a los elementos del vector accuracy basándose en los nombres de la lista datos.list
+
+names(accuracy) <- names(datos.lista)
+print(accuracy)
+
+### Este valor lo tienen que guardar solamente haremos por accuracy y kappa
+### tenemos que mirar el objeto matconf
+```
+
+```{r warning=FALSE}
+# Regresion logistica de lasso
+
+#Establecemos una semilla  
+#Se define el esquema de validación cruzada y una función para entrenar un modelo de regresión logística de lasso.
+set.seed(27965)
+trcontrol <- trainControl(method ='cv', number = 5)
+Rlasso <- function(x) train(clase ~ ., data=x, method = "glmnet", trControl = trControl, tuneGrid = expand.grid(alpha = 1, lambda = seq(0, 1, by = 0.001)), trace = F)
+
+# Se aplica una función a los elemento de la lista y se crea un vector de lista vacío para almacenar las predicciones.
+lista.regrecion.lasso <- lapply(datos.train.lista, Rlasso)
+Prediccion.regrecion.lasso <- vector("list", length = length(datos.lista)) 
+
+#Predicciones utilizando el modelo almacenado en cada elemento de lista.regresion.lasso
+#Prediccion.regrecion.lasso poseera las prediccionesde a cada modelo en lista.regresion lasso para los datos de prueba en datos.test.lista.
+for(l in 1:length(datos.lista)){
+  Prediccion.regrecion.lasso[[l]] <- predict(lista.regrecion.lasso[[l]],datos.test.lista[[l]])
+}
+
+names(Prediccion.regrecion.lasso) <- names(datos.lista)
+lasso.ac <- vector("numeric", length = length(datos.lista))
+
+# Calculo de la precisión para los modelo en la Prediccion.regresionlasso, La precisión se almacenan en el vector lasso.ac
+for(l in 1: length(datos.lista)){
+  lasso.ac[l] <- confusionMatrix(datos.test.lista$raw$clase,Prediccion.regrecion.lasso[[l]])$overall[1]
+  
+}
+
+names(lasso.ac) <- names(datos.lista)
+print(lasso.ac)
+```
+
+```{r warning=FALSE}
+# Regresion logistica de Ridge
+
+#Establecemos una semilla  
+#Se define el esquema de validación cruzada y una función para entrenar un modelo de regresión logística de Ridge.
+set.seed(27965)
+trcontrol <- trainControl(method ='cv', 
+                          number = 5)
+RRidge <- function(x) train(clase ~ ., data=x, method = "glmnet", trControl = trControl, tuneGrid = expand.grid(alpha = 0, lambda = seq(0, 1, by = 0.001)), trace = F)
+
+# Se aplica una función a los elemento de la lista y se crea un vector de lista vacío para almacenar las predicciones.
+lista.regrecion.Ridge <- lapply(datos.train.lista, RRidge)
+Prediccion.regrecion.Ridge <- vector("list", length = length(datos.lista)) 
+
+#Predicciones utilizando el modelo almacenado en cada elemento de lista.regresion.Ridge
+#Prediccion.regrecion.Ridge poseera las prediccionesde a cada modelo en lista.regresion.Ridge para los datos de prueba en datos.test.lista.
+for(l in 1:length(datos.lista)){
+  Prediccion.regrecion.Ridge[[l]] <- predict(lista.regrecion.Ridge[[l]],datos.test.lista[[l]])
+}
+
+names(Prediccion.regrecion.Ridge) <- names(datos.lista)
+Ridge.ac <- vector("numeric", length = length(datos.lista))
+
+# Calculo de la precisión para los modelo, el vector Ridge.ac guarda la precisión
+for(l in 1: length(datos.lista)){
+  Ridge.ac[l] <- confusionMatrix(datos.test.lista$raw$clase,Prediccion.regrecion.Ridge[[l]])$overall[1]
+}
+
+names(Ridge.ac) <- names(datos.lista)
+
+print(Ridge.ac)
+```
+
+```{r warning=FALSE}
+# Regresion logistica de Bayes
+
+#Establecemos una semilla  
+#Se define el esquema de validación cruzada con 10 pliegues para el entrenamiento y una función para entrenar un modelo de regresión logística de Bayes.
+set.seed(27965)
+trcontrol <- trainControl(method ='cv', 
+                          number = 10)
+RBayes <- function(x) train(clase ~ ., data=x, method = "naive_bayes", trControl = trControl)
+
+# Se aplica una función a los elemento de la lista y se crea un vector de lista vacío para almacenar las predicciones.
+lista.regrecion.Bayes <- lapply(datos.train.lista, RBayes)
+Prediccion.regrecion.Bayes <- vector("list", length = length(datos.lista)) 
+
+#Predicciones utilizando el modelo almacenado en cada elemento de lista.regresion.Bayes
+#Prediccion.regrecion.Bayes poseera las predicciones de a cada modelo en lista.regresion.Bayes para los datos de prueba en datos.test.lista.
+for(l in 1:length(datos.lista)){
+  Prediccion.regrecion.Bayes[[l]] <- predict(lista.regrecion.Bayes[[l]],datos.test.lista[[l]])
+}
+
+names(Prediccion.regrecion.Bayes) <- names(datos.lista)
+Bayes.ac <- vector("numeric", length = length(datos.lista))
+
+# Calculo de la precisión para los modelo, el vector Bayes.ac guarda la precisión
+for(l in 1: length(datos.lista)){
+  Bayes.ac[l] <- confusionMatrix(datos.test.lista$raw$clase,Prediccion.regrecion.Bayes[[l]])$overall[1]
+}
+
+names(Bayes.ac) <- names(datos.lista)
+print(Bayes.ac)
+```
+
+```{r warning=FALSE}
+# Regresion logistica Knn
+
+#Establecemos una semilla  
+#Se define el esquema de validación cruzada con 10 pliegues para el entrenamiento y una función para entrenar un modelo de regresión logística Knn.
+set.seed(27965)
+
+VKnn = c(1:20)
+
+trcontrol <- trainControl(method ='repeatedcv', number = 3, repeats = 10)
+RKnn <- function(x) train(clase ~ ., data=x, method = "knn",trControl = trControl, tuneGrid = data.frame(k=VKnn))
+
+# Se aplica una función a los elemento de la lista y se crea un vector de lista vacío para almacenar las predicciones.
+lista.regrecion.Knn <- lapply(datos.train.lista, RKnn)
+Prediccion.regrecion.Knn <- vector("list", length = length(datos.lista)) 
+
+#Predicciones utilizando el modelo almacenado en cada elemento de lista.regresion.Knn
+#Prediccion.regrecion.Ridge poseera las predicciones de a cada modelo en lista.regresion.Knn para los datos de prueba en datos.test.lista.
+for(l in 1:length(datos.lista)){
+  Prediccion.regrecion.Knn[[l]] <- predict(lista.regrecion.Knn[[l]],datos.test.lista[[l]])
+}
+
+names(Prediccion.regrecion.Knn) <- names(datos.lista)
+Knn.ac <- vector("numeric", length = length(datos.lista))
+
+# Calculo de la precisión para los modelo, el vector Ridge.ac guarda la precisión
+for(l in 1: length(datos.lista)){
+  Knn.ac[l] <- confusionMatrix(datos.test.lista$raw$clase,Prediccion.regrecion.Knn[[l]])$overall[1]
+}
+
+names(Knn.ac) <- names(datos.lista)
+print(Knn.ac)
+```
+
+```{r}
+#Obtenemos una matriz 5x6 de los resusltados obtenidos en las regreciones
+matriz3d <- matrix(c(accuracy, lasso.ac, Ridge.ac, Bayes.ac, Knn.ac), nrow = 5, ncol = 6, byrow = TRUE)
+
+matriz3d
+
+```
+
+```{r}
+# separamos la fila con los resultados mayores
+fila_max <- matriz3d[which.max(max.col(matriz3d)), ]
+print(fila_max)
+```

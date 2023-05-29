@@ -1,0 +1,125 @@
+---
+title: "Metodos de Clasificacion"
+author: "Katherine Criollo, Christian Guanoquiza, Esteban Narea"
+format: html
+editor: visual
+---
+
+## Marketing
+
+------------------------------------------------------------------------
+
+Se usó en un principio "bank-additional-full.csv", pero por tener muchos datos, tenía un costo computacional alto, así que se cambió por "bank-additional.csv" por tener 10% de la data que el otro archivo.
+
+```{r}
+# Cargar paquetes
+library(ggplot2)
+library(dplyr)
+library(ggstatsplot)
+library(GGally)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(glmnet)
+library(e1071)
+```
+
+```{r}
+# Cargar el conjunto de datos
+datos_marketing <- read.csv("marketing.csv", header = TRUE)
+datos_marketing$job <- as.numeric(as.factor(datos_marketing$job))
+datos_marketing$marital <- as.numeric(as.factor(datos_marketing$marital))
+datos_marketing$education <- as.numeric(as.factor(datos_marketing$education))
+datos_marketing$default <- as.numeric(as.factor(datos_marketing$default))
+datos_marketing$housing <- as.numeric(as.factor(datos_marketing$housing))
+datos_marketing$loan <- as.numeric(as.factor(datos_marketing$loan))
+datos_marketing$contact <- as.numeric(as.factor(datos_marketing$contact))
+datos_marketing$month <- as.numeric(as.factor(datos_marketing$month))
+datos_marketing$day_of_week <- as.numeric(as.factor(datos_marketing$day_of_week))
+datos_marketing$poutcome <- as.numeric(as.factor(datos_marketing$poutcome))
+datos_marketing$y <- as.numeric(as.factor(datos_marketing$y))
+```
+
+```{r}
+# Análisis descriptivo univariante
+summary(datos_marketing) # Resumen estadístico de todas las variables
+```
+
+```{r}
+#Estadística descriptiva univariante inferencial
+# Utilizaremos ggstatsplot para visualizar la relación entre las variables y la categoría "y" (Resultado)
+ggbetweenstats(datos_marketing, x = "y", y = 'age', title = 'age')
+ggbetweenstats(datos_marketing, x = "y", y = 'job', title = 'job')
+ggbetweenstats(datos_marketing, x = "y", y = 'marital', title = 'marital')
+ggbetweenstats(datos_marketing, x = "y", y = 'education', title = 'education')
+ggbetweenstats(datos_marketing, x = "y", y = 'default', title = 'default')
+ggbetweenstats(datos_marketing, x = "y", y = 'housing', title = 'housing')
+ggbetweenstats(datos_marketing, x = "y", y = 'loan', title = 'loan')
+ggbetweenstats(datos_marketing, x = "y", y = 'contact', title = 'contact')
+ggbetweenstats(datos_marketing, x = "y", y = 'month', title = 'month')
+ggbetweenstats(datos_marketing, x = "y", y = 'duration', title = 'duration')
+ggbetweenstats(datos_marketing, x = "y", y = 'campaign', title = 'campaign')
+ggbetweenstats(datos_marketing, x = "y", y = 'pdays', title = 'pdays')
+ggbetweenstats(datos_marketing, x = "y", y = 'previous', title = 'previous')
+ggbetweenstats(datos_marketing, x = "y", y = 'poutcome', title = 'poutcome')
+ggbetweenstats(datos_marketing, x = "y", y = 'emp.var.rate', title = 'emp.var.rate')
+ggbetweenstats(datos_marketing, x = "y", y = 'cons.price.idx', title = 'cons.price.idx')
+ggbetweenstats(datos_marketing, x = "y", y = 'cons.conf.idx', title = 'cons.conf.idx')
+ggbetweenstats(datos_marketing, x = "y", y = 'euribor3m', title = 'euribor3m')
+ggbetweenstats(datos_marketing, x = "y", y = 'nr.employed', title = 'nr.employed')
+ggbetweenstats(datos_marketing, x = "y", y = 'emp.var.rate', title = 'emp.var.rate')
+```
+
+```{r}
+#Gráfico de correlaciones
+cor_matrix <- cor(datos_marketing[, 1:10])  # Calcular la matriz de correlaciones para las 10 primeras variables
+
+# Gráfico de correlaciones
+corrplot(cor_matrix, method = "color")
+```
+
+```{r}
+#PCA sobre las 10 primeras variables
+pca_data <- datos_marketing[, 1:10]  # Seleccionar las 10 primeras variables
+pca_result <- PCA(pca_data, graph = FALSE)  # Realizar el PCA sin graficar inicialmente
+
+# Scree plot
+fviz_eig(pca_result, addlabels = TRUE, ylim = c(0, 50))  # Graficar el Scree plot
+
+```
+
+```{r}
+# Biplot
+fviz_pca_biplot(pca_result, col.ind = datos_marketing$y, repel = TRUE)
+```
+
+```{r}
+#Dividir el conjunto de datos en prueba y entrenamiento
+set.seed(123456)
+train_indices <- sample(nrow(datos_marketing), round(0.7 * nrow(datos_marketing)))  # 70% de los datos para entrenamiento
+train_data <- datos_marketing[train_indices, ]
+test_data <- datos_marketing[-train_indices, ]
+```
+
+```{r}
+#Entrenar y realizar la predicción del diagnóstico con Naive Bayes
+model <- naiveBayes(y ~ ., data = train_data)
+predicted <- predict(model, newdata = test_data)
+```
+
+```{r}
+#Obtener la matriz de confusión y calcular las métricas de evaluación
+confusion_matrix <- table(predicted, test_data$y)
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+specificity <- confusion_matrix[1, 1] / sum(confusion_matrix[1, ])
+sensitivity <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+```
+
+```{r}
+# Mostrar resultados
+print(confusion_matrix)
+print(paste("Accuracy:", accuracy))
+print(paste("Specificity:", specificity))
+print(paste("Sensitivity:", sensitivity))
+
+```
